@@ -3,6 +3,7 @@ import {default as Emitter, emitProxyTypeCheck} from './emit';
 export const enum BaseShape {
   BOTTOM,
   NULL,
+  OPTIONAL,
   RECORD,
   STRING,
   BOOLEAN,
@@ -11,7 +12,7 @@ export const enum BaseShape {
   ANY
 }
 
-export type Shape = CBottomShape | CNullShape | CRecordShape | CStringShape | CBooleanShape | CNumberShape | CCollectionShape | CAnyShape;
+export type Shape = CBottomShape | COptionalShape | CNullShape | CRecordShape | CStringShape | CBooleanShape | CNumberShape | CCollectionShape | CAnyShape;
 
 export const enum ContextType {
   ENTITY,
@@ -77,10 +78,19 @@ export class CBottomShape {
   public get nullable(): boolean {
     return false;
   }
+  public get optional(): boolean {
+    return false;
+  }
   public makeNullable(): CBottomShape {
     throw new TypeError(`Doesn't make sense.`);
   }
   public makeNonNullable(): CBottomShape {
+    return this;
+  }
+  public makeOptional(): CBottomShape {
+    return this;
+  }
+  public makeMandatory(): CBottomShape {
     return this;
   }
   public emitType(e: Emitter): void {
@@ -96,9 +106,48 @@ export class CBottomShape {
 
 export const BottomShape = new CBottomShape();
 
+export class COptionalShape {
+  public get nullable(): boolean {
+    return false;
+  }
+  public get optional(): boolean {
+    return true;
+  }
+  public get type(): BaseShape.OPTIONAL {
+    return BaseShape.OPTIONAL;
+  }
+  public makeNullable(): CNullShape {
+    return OptionalNullShape;
+  }
+  public makeNonNullable(): this {
+    return this;
+  }
+  public makeOptional(): this {
+    return this;
+  }
+  public makeMandatory(): CNullShape {
+    return NullShape;
+  }
+  public emitType(e: Emitter): void {
+    e.interfaces.write("undefined");
+  }
+  public getProxyType(e: Emitter): string {
+    return "undefined";
+  }
+  public equal(t: Shape): boolean {
+    return this === t;
+  }
+}
+
+export const OptionalShape = new COptionalShape();
+
+
 export class CNullShape {
   public get nullable(): boolean {
     return true;
+  }
+  public get optional(): boolean {
+    return this === OptionalNullShape;
   }
   public get type(): BaseShape.NULL {
     return BaseShape.NULL;
@@ -109,8 +158,17 @@ export class CNullShape {
   public makeNonNullable(): CNullShape {
     return this;
   }
+  public makeOptional(): CNullShape {
+    return OptionalNullShape;
+  }
+  public makeMandatory(): CNullShape {
+    return NullShape;
+  }
+  private get orUndefined(): " | undefined" | "" {
+    return this.nullable ? " | undefined" : "";
+  }
   public emitType(e: Emitter): void {
-    e.interfaces.write("null");
+    e.interfaces.write("null" + this.orUndefined);
   }
   public getProxyType(e: Emitter): string {
     return "null";
@@ -121,29 +179,41 @@ export class CNullShape {
 }
 
 export const NullShape = new CNullShape();
+export const OptionalNullShape = new CNullShape();
 
 export class CNumberShape {
   public get nullable(): boolean {
-    return this === NullableNumberShape;
+    return this === NullableNumberShape || this === OptionalNullableNumberShape;
+  }
+  public get optional(): boolean {
+    return this === OptionalNumberShape || this === OptionalNullableNumberShape;
   }
   public get type(): BaseShape.NUMBER {
     return BaseShape.NUMBER;
   }
   public makeNullable(): CNumberShape {
-    return NullableNumberShape;
+    return this.optional ? OptionalNullableNumberShape : NullableNumberShape;
   }
   public makeNonNullable(): CNumberShape {
-    return NumberShape;
+    return this.optional ? OptionalNumberShape : NumberShape;
+  }
+  public makeOptional(): CNumberShape {
+    return this.nullable ? OptionalNullableNumberShape : OptionalNumberShape;
+  }
+  public makeMandatory(): CNumberShape {
+    return this.nullable ? NullableNumberShape : NumberShape;
+  }
+  private get orNull(): " | null" | "" {
+    return this.nullable ? " | null" : "";
+  }
+  private get orUndefined(): " | undefined" | "" {
+    return this.nullable ? " | undefined" : "";
   }
   public emitType(e: Emitter): void {
     e.interfaces.write(this.getProxyType(e));
   }
   public getProxyType(e: Emitter): string {
-    let rv = "number";
-    if (this.nullable) {
-      rv += " | null";
-    }
-    return rv;
+    return `number${this.orNull}${this.orUndefined}`;
   }
   public equal(t: Shape): boolean {
     return this === t;
@@ -152,29 +222,42 @@ export class CNumberShape {
 
 export const NumberShape = new CNumberShape();
 export const NullableNumberShape = new CNumberShape();
+export const OptionalNumberShape = new CNumberShape();
+export const OptionalNullableNumberShape = new CNumberShape();
 
 export class CStringShape {
   public get type(): BaseShape.STRING {
     return BaseShape.STRING;
   }
   public get nullable(): boolean {
-    return this === NullableStringShape;
+    return this === NullableStringShape || this === OptionalNullableStringShape;
+  }
+  public get optional(): boolean {
+    return this === OptionalStringShape || this === OptionalNullableStringShape;
   }
   public makeNullable(): CStringShape {
-    return NullableStringShape;
+    return this.optional ? OptionalNullableStringShape : NullableStringShape;
   }
   public makeNonNullable(): CStringShape {
-    return StringShape;
+    return this.optional ? OptionalStringShape : StringShape;
+  }
+  public makeOptional(): CStringShape {
+    return this.nullable ? OptionalNullableStringShape : OptionalStringShape;
+  }
+  public makeMandatory(): CStringShape {
+    return this.nullable ? NullableStringShape : StringShape;
+  }
+  private get orNull(): " | null" | "" {
+    return this.nullable ? " | null" : "";
+  }
+  private get orUndefined(): " | undefined" | "" {
+    return this.nullable ? " | undefined" : "";
   }
   public emitType(e: Emitter): void {
     e.interfaces.write(this.getProxyType(e));
   }
   public getProxyType(e: Emitter): string {
-    let rv = "string";
-    if (this.nullable) {
-      rv += " | null";
-    }
-    return rv;
+    return `string${this.orNull}${this.orUndefined}`;
   }
   public equal(t: Shape): boolean {
     return this === t;
@@ -183,29 +266,42 @@ export class CStringShape {
 
 export const StringShape = new CStringShape();
 export const NullableStringShape = new CStringShape();
+export const OptionalStringShape = new CStringShape();
+export const OptionalNullableStringShape = new CStringShape();
 
 export class CBooleanShape {
   public get type(): BaseShape.BOOLEAN {
     return BaseShape.BOOLEAN;
   }
   public get nullable(): boolean {
-    return this === NullableBooleanShape;
+    return this === NullableBooleanShape || this === OptionalNullableBooleanShape;
+  }
+  public get optional(): boolean {
+    return this === OptionalBooleanShape || this === OptionalNullableBooleanShape;
   }
   public makeNullable(): CBooleanShape {
-    return NullableBooleanShape;
+    return this.optional ? OptionalNullableBooleanShape : NullableBooleanShape;
   }
   public makeNonNullable(): CBooleanShape {
-    return BooleanShape;
+    return this.optional ? OptionalBooleanShape : BooleanShape;
+  }
+  public makeOptional(): CBooleanShape {
+    return this.nullable ? OptionalNullableBooleanShape : OptionalBooleanShape;
+  }
+  public makeMandatory(): CBooleanShape {
+    return this.nullable ? NullableBooleanShape : BooleanShape;
+  }
+  private get orNull(): " | null" | "" {
+    return this.nullable ? " | null" : "";
+  }
+  private get orUndefined(): " | undefined" | "" {
+    return this.nullable ? " | undefined" : "";
   }
   public emitType(e: Emitter): void {
     e.interfaces.write(this.getProxyType(e));
   }
   public getProxyType(e: Emitter): string {
-    let rv = "boolean";
-    if (this.nullable) {
-      rv += " | null";
-    }
-    return rv;
+    return `boolean${this.orNull}${this.orUndefined}`;
   }
   public equal(t: Shape): boolean {
     return this === t;
@@ -214,6 +310,8 @@ export class CBooleanShape {
 
 export const BooleanShape = new CBooleanShape();
 export const NullableBooleanShape = new CBooleanShape();
+export const OptionalBooleanShape = new CBooleanShape();
+export const OptionalNullableBooleanShape = new CBooleanShape();
 
 export class CAnyShape {
   public get type(): BaseShape.ANY {
@@ -223,7 +321,7 @@ export class CAnyShape {
   private readonly _nullable: boolean = false;
   private _hasDistilledShapes: boolean = false;
   private _distilledShapes: Shape[] = [];
-  constructor(shapes: Shape[], nullable: boolean) {
+  constructor(shapes: Shape[], nullable: boolean, public optional: boolean) {
     this._shapes = shapes;
     this._nullable = nullable;
   }
@@ -234,12 +332,26 @@ export class CAnyShape {
     if (this._nullable) {
       return this;
     } else {
-      return new CAnyShape(this._shapes, true);
+      return new CAnyShape(this._shapes, true, this.optional);
     }
   }
   public makeNonNullable(): CAnyShape {
     if (this._nullable) {
-      return new CAnyShape(this._shapes, false);
+      return new CAnyShape(this._shapes, false, this.optional);
+    } else {
+      return this;
+    }
+  }
+  public makeOptional(): CAnyShape {
+    if (this.optional) {
+      return this;
+    } else {
+      return new CAnyShape(this._shapes, this._nullable, true);
+    }
+  }
+  public makeMandatory(): CAnyShape {
+    if (this.optional) {
+      return new CAnyShape(this._shapes, this._nullable, false);
     } else {
       return this;
     }
@@ -271,7 +383,7 @@ export class CAnyShape {
   public addToShapes(shape: Shape): CAnyShape {
     const shapeClone = this._shapes.slice(0);
     shapeClone.push(shape);
-    return new CAnyShape(shapeClone, this._nullable);
+    return new CAnyShape(shapeClone, this._nullable, this.optional);
   }
   public emitType(e: Emitter): void {
     this._ensureDistilled(e);
@@ -300,7 +412,7 @@ export class CRecordShape {
   public readonly contexts: Context[];
 
   private _name: string | null = null;
-  private constructor(fields: Map<string, Shape>, nullable: boolean, contexts: Context[]) {
+  private constructor(fields: Map<string, Shape>, nullable: boolean, contexts: Context[], public readonly optional: boolean) {
     // Assign a context to all fields.
     const fieldsWithContext = new Map<string, Shape>();
     fields.forEach((val, index) => {
@@ -321,15 +433,21 @@ export class CRecordShape {
    * Construct a new record shape. Returns an existing, equivalent record shape
    * if applicable.
    */
-  public static Create(e: Emitter, fields: Map<string, Shape>, nullable: boolean, contexts: Context[] = []): CRecordShape {
-    const record = new CRecordShape(fields, nullable, contexts);
+  public static Create(
+    e: Emitter,
+    fields: Map<string, Shape>,
+    nullable: boolean,
+    contexts: Context[] = [],
+    optional = false
+  ): CRecordShape {
+    const record = new CRecordShape(fields, nullable, contexts, optional);
     return e.registerRecordShape(record);
   }
   public makeNullable(): CRecordShape {
     if (this._nullable) {
       return this;
     } else {
-      return new CRecordShape(this._fields, true, this.contexts);
+      return new CRecordShape(this._fields, true, this.contexts, this.optional);
     }
   }
   public addContext(ctx: Context): CRecordShape {
@@ -338,7 +456,21 @@ export class CRecordShape {
   }
   public makeNonNullable(): CRecordShape {
     if (this._nullable) {
-      return new CRecordShape(this._fields, false, this.contexts);
+      return new CRecordShape(this._fields, false, this.contexts, this.optional);
+    } else {
+      return this;
+    }
+  }
+  public makeOptional(): CRecordShape {
+    if (this.optional) {
+      return this;
+    } else {
+      return new CRecordShape(this._fields, this.nullable, this.contexts, true);
+    }
+  }
+  public makeMandatory(): CRecordShape {
+    if (this.optional) {
+      return new CRecordShape(this._fields, this.nullable, this.contexts, false);
     } else {
       return this;
     }
@@ -355,7 +487,7 @@ export class CRecordShape {
     }
   }
   public equal(t: Shape): boolean {
-    if (t.type === BaseShape.RECORD && this._nullable === t._nullable && this._fields.size === t._fields.size) {
+    if (t.type === BaseShape.RECORD && this._nullable === t._nullable && this.optional === t.optional && this._fields.size === t._fields.size) {
       let rv = true;
       const tFields = t._fields;
       // Check all fields.
@@ -375,6 +507,12 @@ export class CRecordShape {
     }
     return false;
   }
+  private get orNull(): " | null" | "" {
+    return this.nullable ? " | null" : "";
+  }
+  private get orUndefined(): " | undefined" | "" {
+    return this.nullable ? " | undefined" : "";
+  }
   public emitType(e: Emitter): void {
     e.interfaces.write(this.getName(e));
     if (this.nullable) {
@@ -385,11 +523,7 @@ export class CRecordShape {
     return `${this.getName(e)}Proxy`;
   }
   public getProxyType(e: Emitter): string {
-    let rv = `${this.getName(e)}Proxy`;
-    if (this.nullable) {
-      rv += " | null";
-    }
-    return rv;
+    return `${this.getName(e)}Proxy${this.orNull}${this.orUndefined}`;
   }
   public emitInterfaceDefinition(e: Emitter): void {
     const w = e.interfaces;
@@ -486,19 +620,25 @@ export class CCollectionShape {
   public readonly baseShape: Shape;
   public readonly contexts: Context[];
   private _name: string | null = null;
-  constructor(baseShape: Shape, contexts: Context[] = []) {
+  constructor(baseShape: Shape, contexts: Context[] = [], public readonly nullable = false, public readonly optional = false) {
     // Add context if a record/collection.
     this.baseShape = (baseShape.type === BaseShape.RECORD || baseShape.type === BaseShape.COLLECTION) ? baseShape.addContext(new EntityContext(this)) : baseShape;
     this.contexts = contexts;
   }
 
-  public get nullable(): boolean {
-    return true;
-  }
+  /*public get nullable(): boolean {
+    return !true;
+  }*/
   public makeNullable(): CCollectionShape {
     return this;
   }
   public makeNonNullable(): CCollectionShape {
+    return this;
+  }
+  public makeOptional(): CCollectionShape {
+    return this;
+  }
+  public makeMandatory(): CCollectionShape {
     return this;
   }
   public addContext(ctx: Context): CCollectionShape {
@@ -508,14 +648,21 @@ export class CCollectionShape {
   public emitType(e: Emitter): void {
     e.interfaces.write("(");
     this.baseShape.emitType(e);
-    e.interfaces.write(")[] | null");
+    e.interfaces.write(`)[]${this.orNull}`);
+  }
+  private get orNull(): string {
+    return this.nullable ? " | null": "";
+  }
+  private get orUndefined(): string {
+    return this.optional ? " | undefined" : "";
   }
   public getProxyType(e: Emitter): string {
     const base = this.baseShape.getProxyType(e);
+    const tail = this.orNull + this.orUndefined;
     if (base.indexOf("|") !== -1) {
-      return `(${base})[] | null`;
+      return `(${base})[]${tail}`;
     } else {
-      return `${base}[] | null`;
+      return `${base}[]${tail}`;
     }
   }
   public equal(t: Shape): boolean {
@@ -558,6 +705,14 @@ export function csh(e: Emitter, s1: Shape, s2: Shape): Shape {
     return s1;
   }
 
+  // csh(undefined, σ) = csh(σ, undefined) = optional<σ>
+  if (s1.type === BaseShape.OPTIONAL) {
+    return s2.makeOptional();
+  }
+  if (s2.type === BaseShape.OPTIONAL) {
+    return s1.makeOptional();
+  }
+
   // csh(null, σ) = csh(σ, null) = nullable<σ>
   if (s1.type === BaseShape.NULL) {
     return s2.makeNullable();
@@ -598,11 +753,14 @@ export function csh(e: Emitter, s1: Shape, s2: Shape): Shape {
   }
 
   // (any) rule
-  return new CAnyShape([s1, s2], s1.nullable || s2.nullable);
+  return new CAnyShape([s1, s2], s1.nullable || s2.nullable, s1.optional || s2.optional);
 }
 
 export function d2s(e: Emitter, d: any): Shape {
-  if (d === undefined || d === null) {
+  if (d === undefined) {
+    return OptionalShape;
+  }
+  if (d === null) {
     return NullShape;
   }
   switch (typeof(d)) {
@@ -623,7 +781,6 @@ export function d2s(e: Emitter, d: any): Shape {
     let t: Shape = BottomShape;
     for (let i = 0; i < d.length; i++) {
       t = csh(e, t, d2s(e, d[i]));
-
     }
     return new CCollectionShape(t);
   }
